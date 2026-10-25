@@ -5847,14 +5847,6 @@
         "status": "Status"
       },
       "option": {
-        "cacheTtlSeconds": {
-          "label": "Cache duration (seconds)",
-          "description": "Use 0 for Automatic: 60 seconds for Jellyfin, 1 hour for other integrations. Otherwise enter 5–86400 seconds. Integrations share cached values; another widget may refresh them sooner."
-        },
-        "checkIntervalSeconds": {
-          "label": "Maximum check interval (seconds)",
-          "description": "Check at least this often while the board is visible (5–86400 seconds), and when cached values expire. Fresh cached values do not contact the integration."
-        },
         "table": {
           "label": "Table view"
         },
