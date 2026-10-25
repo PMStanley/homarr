@@ -121,7 +121,10 @@ export default function StatsWidget({
         const result = await utils.client.widget.stats.refresh.mutate({ integrationId, force });
         await utils.widget.stats.snapshot.cancel({ integrationId });
         utils.widget.stats.snapshot.setData({ integrationId }, result);
-        retry.current.set(integrationId, Date.now() + 60_000);
+        // A fresh snapshot already has a server expiry. Starting a second window
+        // here would skip that expiry by the response's transport time.
+        if (result.stale) retry.current.set(integrationId, Date.now() + 60_000);
+        else retry.current.delete(integrationId);
       } catch {
         refreshErrors.current.set(integrationId, previousUpdatedAt);
         retry.current.set(integrationId, Date.now() + 60_000);

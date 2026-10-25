@@ -101,6 +101,9 @@ beforeEach(() => {
   };
   mocks.getData.mockImplementation(() => mocks.snapshot);
   mocks.mutate.mockResolvedValue({ ...mocks.snapshot, stale: false });
+  mocks.setData.mockImplementation((_input, snapshot: typeof mocks.snapshot) => {
+    mocks.snapshot = snapshot;
+  });
   root = createRoot(document.createElement("div"));
 });
 afterEach(async () => {
@@ -130,6 +133,20 @@ test("polls at snapshot expiry instead of waiting an extra minute", async () => 
     mocks.snapshot.freshUntil = 123_000;
     await act(async () => root.render(<StatsWidget {...props} />));
     expect(mocks.pollInterval).toHaveBeenLastCalledWith(23_000);
+  } finally {
+    now.mockRestore();
+  }
+});
+
+test("response latency does not defer the next refresh past server expiry", async () => {
+  const now = vi.spyOn(Date, "now").mockReturnValue(100_000);
+  try {
+    mocks.mutate.mockResolvedValue({ ...mocks.snapshot, updatedAt: 99_900, freshUntil: 159_900, stale: false });
+    await act(async () => root.render(<StatsWidget {...props} />));
+    now.mockReturnValue(159_900);
+    mocks.snapshot = { ...mocks.snapshot, stale: true };
+    await act(async () => root.render(<StatsWidget {...props} />));
+    expect(mocks.mutate).toHaveBeenCalledTimes(2);
   } finally {
     now.mockRestore();
   }
