@@ -8,6 +8,7 @@ import StatsWidget from "./component";
 const mocks = vi.hoisted(() => ({
   snapshot: { values: { sessions: 1 }, updatedAt: 1, stale: true, retryAt: 0, error: false, freshUntil: 60_001 },
   pollInterval: vi.fn(),
+  queryInput: vi.fn(),
   Empty: () => null,
   mutate: vi.fn(),
   getData: vi.fn(),
@@ -63,9 +64,10 @@ vi.mock("@homarr/api/client", () => {
                 data: { name: "Jellyfin", metrics: [{ key: "sessions", label: "Sessions", unit: "count" }] },
               }),
               snapshot: (
-                _input: unknown,
+                input: unknown,
                 options: { refetchInterval: (query: { state: { data: typeof mocks.snapshot } }) => number },
               ) => {
+                mocks.queryInput(input);
                 mocks.pollInterval(options.refetchInterval({ state: { data: mocks.snapshot } }));
                 return { data: mocks.snapshot };
               },
@@ -112,13 +114,27 @@ afterEach(async () => {
 
 test("automatically refreshes an existing stale snapshot once per integration", async () => {
   await act(async () => root.render(<StatsWidget {...props} integrationIds={["jellyfin", "jellyfin"]} />));
-  expect(mocks.mutate).toHaveBeenCalledExactlyOnceWith({ integrationId: "jellyfin", force: false });
+  expect(mocks.mutate).toHaveBeenCalledExactlyOnceWith({ integrationId: "jellyfin", force: false, cacheTtlSeconds: 0 });
   expect(mocks.setData).toHaveBeenCalledOnce();
 });
 test("does not refresh a fresh snapshot", async () => {
   mocks.snapshot.stale = false;
   await act(async () => root.render(<StatsWidget {...props} />));
   expect(mocks.mutate).not.toHaveBeenCalled();
+});
+
+test("uses configured checking time and cache policy for every snapshot operation", async () => {
+  const options = { ...props.options, checkIntervalSeconds: 10, cacheTtlSeconds: 300 };
+  await act(async () => root.render(<StatsWidget {...props} options={options} />));
+  expect(mocks.pollInterval).toHaveBeenLastCalledWith(10_000);
+  expect(mocks.queryInput).toHaveBeenCalledWith({ integrationId: "jellyfin", cacheTtlSeconds: 300 });
+  expect(mocks.mutate).toHaveBeenCalledExactlyOnceWith({
+    integrationId: "jellyfin",
+    cacheTtlSeconds: 300,
+    force: false,
+  });
+  expect(mocks.cancel).toHaveBeenCalledWith({ integrationId: "jellyfin", cacheTtlSeconds: 300 });
+  expect(mocks.setData).toHaveBeenCalledWith({ integrationId: "jellyfin", cacheTtlSeconds: 300 }, expect.anything());
 });
 test("honors the server retry backoff", async () => {
   mocks.snapshot.retryAt = Date.now() + 60_000;

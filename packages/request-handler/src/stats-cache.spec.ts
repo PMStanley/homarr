@@ -49,6 +49,31 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("statistics cache refresh", () => {
+  test("uses a custom cache lifetime consistently for reads and automatic refresh", async () => {
+    const other = { ...input, kind: "sonarr" as const };
+    await refreshStatsAsync(other, false, 10);
+    const updatedAt = Date.now();
+    expect(await getStatsSnapshotAsync(other, 10)).toMatchObject({ stale: false, freshUntil: updatedAt + 10_000 });
+    vi.advanceTimersByTime(9_999);
+    await refreshStatsAsync(other, false, 10);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect((await getStatsSnapshotAsync(other, 10)).stale).toBe(true);
+    await refreshStatsAsync(other, false, 10);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("widgets with different cache durations share values and refresh deduplication", async () => {
+    await refreshStatsAsync(input, false, 10);
+    vi.advanceTimersByTime(10_000);
+    expect((await getStatsSnapshotAsync(input, 300)).stale).toBe(false);
+    expect((await getStatsSnapshotAsync(input, 10)).stale).toBe(true);
+    await Promise.all([refreshStatsAsync(input, false, 10), refreshStatsAsync(input, false, 10)]);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.snapshots.size).toBe(1);
+    expect((await getStatsSnapshotAsync(input, 300)).updatedAt).toBe(Date.now());
+  });
+
   test("refreshes Jellyfin at 60 seconds and replaces playing with idle", async () => {
     expect((await getStatsSnapshotAsync(input)).stale).toBe(true);
     await refreshStatsAsync(input, false);

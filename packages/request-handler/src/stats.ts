@@ -12,7 +12,8 @@ const logger = createLogger({ module: "integrationStats" });
 
 const FRESH_MS = 60 * 60 * 1000;
 // Jellyfin playback changes frequently; library and other statistics retain their longer cache.
-const getFreshMs = (kind: IntegrationKind) => (kind === "jellyfin" ? 60_000 : FRESH_MS);
+const getFreshMs = (kind: IntegrationKind, cacheTtlSeconds: number) =>
+  cacheTtlSeconds === 0 ? (kind === "jellyfin" ? 60_000 : FRESH_MS) : cacheTtlSeconds * 1000;
 const RETRY_MS = 60_000;
 const MAX_PENDING = 128;
 const snapshotSchema = z.object({
@@ -87,7 +88,7 @@ const resolveAsync = async (integration: Input) => {
   return { identity, generation: generation.value, name, channel, snapshot };
 };
 
-export const getStatsSnapshotAsync = async (integration: Input) => {
+export const getStatsSnapshotAsync = async (integration: Input, cacheTtlSeconds = 0) => {
   const demo = getDemoStatsValues(integration);
   if (demo) {
     return {
@@ -96,7 +97,7 @@ export const getStatsSnapshotAsync = async (integration: Input) => {
       retryAt: 0,
       error: false,
       stale: false,
-      freshUntil: Date.now() + getFreshMs(integration.kind),
+      freshUntil: Date.now() + getFreshMs(integration.kind, cacheTtlSeconds),
     };
   }
 
@@ -106,30 +107,31 @@ export const getStatsSnapshotAsync = async (integration: Input) => {
     updatedAt: snapshot.updatedAt,
     retryAt: snapshot.retryAt,
     error: snapshot.error,
-    stale: snapshot.updatedAt === null || Date.now() - snapshot.updatedAt >= getFreshMs(integration.kind),
-    freshUntil: snapshot.updatedAt === null ? null : snapshot.updatedAt + getFreshMs(integration.kind),
+    stale:
+      snapshot.updatedAt === null || Date.now() - snapshot.updatedAt >= getFreshMs(integration.kind, cacheTtlSeconds),
+    freshUntil: snapshot.updatedAt === null ? null : snapshot.updatedAt + getFreshMs(integration.kind, cacheTtlSeconds),
   };
 };
 
 const pauseAsync = () => new Promise<void>((resolve) => setTimeout(resolve, 250));
 
-export const refreshStatsAsync = async (integration: Input, force: boolean) => {
+export const refreshStatsAsync = async (integration: Input, force: boolean, cacheTtlSeconds = 0) => {
   const key = integration.id;
   const pending = running.get(key);
   if (pending) return await pending;
   if (running.size >= MAX_PENDING) throw new Error("Statistics refresh queue is full");
-  const work = runRefreshAsync(integration, force).finally(() => running.delete(key));
+  const work = runRefreshAsync(integration, force, cacheTtlSeconds).finally(() => running.delete(key));
   running.set(key, work);
   return await work;
 };
 
-const runRefreshAsync = async (integration: Input, force: boolean) => {
+const runRefreshAsync = async (integration: Input, force: boolean, cacheTtlSeconds: number) => {
   const initial = await resolveAsync(integration);
   if (!force && initial.snapshot.retryAt > Date.now()) return;
   if (
     !force &&
     initial.snapshot.updatedAt !== null &&
-    Date.now() - initial.snapshot.updatedAt < getFreshMs(integration.kind)
+    Date.now() - initial.snapshot.updatedAt < getFreshMs(integration.kind, cacheTtlSeconds)
   )
     return;
   const lock = createLockChannel(`integration-stats:lock:${integration.id}`, cacheOptions);
@@ -174,7 +176,7 @@ const runRefreshAsync = async (integration: Input, force: boolean) => {
     if (
       !force &&
       current.snapshot.updatedAt !== null &&
-      Date.now() - current.snapshot.updatedAt < getFreshMs(integration.kind)
+      Date.now() - current.snapshot.updatedAt < getFreshMs(integration.kind, cacheTtlSeconds)
     )
       return;
     deadline = setTimeout(() => controller.abort(), 60_000);

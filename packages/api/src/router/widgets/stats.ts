@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import { integrationKinds, integrationDefs } from "@homarr/definitions";
 import { getStatsMetrics } from "@homarr/integrations/stats";
 import { getStatsSnapshotAsync, refreshStatsAsync } from "@homarr/request-handler/stats";
+import { statsCacheTtlSecondsSchema } from "@homarr/validation/stats";
 
 import { createOneIntegrationMiddleware } from "../../middlewares/integration";
 import { createTRPCRouter, publicProcedure } from "../../trpc";
@@ -29,24 +30,25 @@ export const statsRouter = createTRPCRouter({
       mcp: {
         enabled: true,
         description:
-          "Read cached integration statistics and their age without contacting the service. Requires integrationId from integration_all and query access.",
+          "Read cached integration statistics and their age without contacting the service. Requires integrationId from integration_all and query access. cacheTtlSeconds sets the freshness window (5–86400 seconds); 0 uses the integration default.",
       },
     })
     .concat(access)
-    .query(async ({ ctx }) => await getStatsSnapshotAsync(ctx.integration)),
+    .input(z.object({ cacheTtlSeconds: statsCacheTtlSecondsSchema.default(0) }))
+    .query(async ({ ctx, input }) => await getStatsSnapshotAsync(ctx.integration, input.cacheTtlSeconds)),
   refresh: publicProcedure
     .meta({
       mcp: {
         enabled: true,
         effect: "additive",
         description:
-          "Refresh read-only integration statistics through a bounded queue. Requires integrationId from integration_all and query access. force bypasses the source freshness window (one minute for Jellyfin, one hour otherwise).",
+          "Refresh read-only integration statistics through a bounded queue. Requires integrationId from integration_all and query access. cacheTtlSeconds sets the freshness window (5–86400 seconds); 0 uses one minute for Jellyfin and one hour otherwise. force bypasses freshness and retry backoff.",
       },
     })
     .concat(access)
-    .input(z.object({ force: z.boolean().default(false) }))
+    .input(z.object({ force: z.boolean().default(false), cacheTtlSeconds: statsCacheTtlSecondsSchema.default(0) }))
     .mutation(async ({ ctx, input }) => {
-      await refreshStatsAsync(ctx.integration, input.force);
-      return await getStatsSnapshotAsync(ctx.integration);
+      await refreshStatsAsync(ctx.integration, input.force, input.cacheTtlSeconds);
+      return await getStatsSnapshotAsync(ctx.integration, input.cacheTtlSeconds);
     }),
 });
