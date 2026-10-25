@@ -83,7 +83,14 @@ export default function StatsWidget({
         { integrationId },
         {
           staleTime: 30_000,
-          refetchInterval: demoReadOnly ? false : 60_000,
+          refetchInterval: demoReadOnly
+            ? false
+            : (query) => {
+                const snapshot = query.state.data;
+                if (!snapshot || snapshot.stale || snapshot.freshUntil === null) return 60_000;
+                // Align the next poll with expiry, including snapshots filled just after a poll.
+                return Math.max(1_000, Math.min(60_000, snapshot.freshUntil - Date.now()));
+              },
           refetchOnWindowFocus: !demoReadOnly,
           refetchIntervalInBackground: false,
           retry: false,
@@ -159,7 +166,7 @@ export default function StatsWidget({
     for (const [index, integrationId] of visibleIds.entries()) {
       const snapshot = snapshots[index];
       if (!snapshot?.data || snapshot.error) continue;
-      if (snapshot.data.updatedAt === null && snapshot.data.retryAt <= Date.now()) void refresh(integrationId, false);
+      if (snapshot.data.stale && snapshot.data.retryAt <= Date.now()) void refresh(integrationId, false);
     }
   }, [demoReadOnly, visibleIds, snapshots, refresh]);
 

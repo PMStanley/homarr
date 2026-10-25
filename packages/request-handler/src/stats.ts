@@ -11,6 +11,8 @@ import { getIntegrationCacheIdentity } from "./lib/integration-request-handler";
 const logger = createLogger({ module: "integrationStats" });
 
 const FRESH_MS = 60 * 60 * 1000;
+// Jellyfin playback changes frequently; library and other statistics retain their longer cache.
+const getFreshMs = (kind: IntegrationKind) => (kind === "jellyfin" ? 60_000 : FRESH_MS);
 const RETRY_MS = 60_000;
 const MAX_PENDING = 128;
 const snapshotSchema = z.object({
@@ -94,6 +96,7 @@ export const getStatsSnapshotAsync = async (integration: Input) => {
       retryAt: 0,
       error: false,
       stale: false,
+      freshUntil: Date.now() + getFreshMs(integration.kind),
     };
   }
 
@@ -103,7 +106,8 @@ export const getStatsSnapshotAsync = async (integration: Input) => {
     updatedAt: snapshot.updatedAt,
     retryAt: snapshot.retryAt,
     error: snapshot.error,
-    stale: snapshot.updatedAt === null || Date.now() - snapshot.updatedAt >= FRESH_MS,
+    stale: snapshot.updatedAt === null || Date.now() - snapshot.updatedAt >= getFreshMs(integration.kind),
+    freshUntil: snapshot.updatedAt === null ? null : snapshot.updatedAt + getFreshMs(integration.kind),
   };
 };
 
@@ -122,7 +126,12 @@ export const refreshStatsAsync = async (integration: Input, force: boolean) => {
 const runRefreshAsync = async (integration: Input, force: boolean) => {
   const initial = await resolveAsync(integration);
   if (!force && initial.snapshot.retryAt > Date.now()) return;
-  if (!force && initial.snapshot.updatedAt !== null && Date.now() - initial.snapshot.updatedAt < FRESH_MS) return;
+  if (
+    !force &&
+    initial.snapshot.updatedAt !== null &&
+    Date.now() - initial.snapshot.updatedAt < getFreshMs(integration.kind)
+  )
+    return;
   const lock = createLockChannel(`integration-stats:lock:${integration.id}`, cacheOptions);
   const token = await lock.acquireAsync(120);
   // Another process owns this source. The caller keeps its snapshot and checks again later.
@@ -161,7 +170,13 @@ const runRefreshAsync = async (integration: Input, force: boolean) => {
     // Recheck after queuing: credentials or another refresh may have changed the snapshot.
     const current = await resolveAsync(integration);
     if (current.identity !== initial.identity || current.generation !== initial.generation) return;
-    if (!force && current.snapshot.updatedAt !== null && Date.now() - current.snapshot.updatedAt < FRESH_MS) return;
+    if (!force && current.snapshot.retryAt > Date.now()) return;
+    if (
+      !force &&
+      current.snapshot.updatedAt !== null &&
+      Date.now() - current.snapshot.updatedAt < getFreshMs(integration.kind)
+    )
+      return;
     deadline = setTimeout(() => controller.abort(), 60_000);
     deadline.unref?.();
     try {

@@ -155,7 +155,7 @@ export class JellyfinIntegration extends Integration implements IMediaServerInte
     return sessions.data
       .filter((sessionInfo) => sessionInfo.UserId !== undefined)
       .filter((sessionInfo) => sessionInfo.DeviceId !== "homarr")
-      .filter((sessionInfo) => !options.showOnlyPlaying || sessionInfo.NowPlayingItem !== undefined)
+      .filter((sessionInfo) => !options.showOnlyPlaying || sessionInfo.NowPlayingItem != null)
       .map((sessionInfo): StreamSession => {
         let currentlyPlaying: StreamSession["currentlyPlaying"] | null = null;
 

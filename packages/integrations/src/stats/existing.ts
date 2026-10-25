@@ -247,7 +247,12 @@ for (const kind of ["plex", "jellyfin", "emby"] as const) {
     kind,
     [metric("sessions", "Playback sessions")],
     (client) => client.getCurrentSessionsAsync({ showOnlyPlaying: false }),
-    (data) => ({ sessions: data.length }),
+    (data) => ({
+      sessions:
+        kind === "jellyfin"
+          ? data.filter((session) => session.currentlyPlaying?.playback.state === "playing").length
+          : data.length,
+    }),
   );
 }
 for (const kind of ["ntfy", "gotify"] as const) {

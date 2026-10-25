@@ -40,7 +40,7 @@ export const statsRouter = createTRPCRouter({
         enabled: true,
         effect: "additive",
         description:
-          "Refresh read-only integration statistics through a bounded queue. Requires integrationId from integration_all and query access. force bypasses the one-hour freshness window.",
+          "Refresh read-only integration statistics through a bounded queue. Requires integrationId from integration_all and query access. force bypasses the source freshness window (one minute for Jellyfin, one hour otherwise).",
       },
     })
     .concat(access)
