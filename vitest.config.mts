@@ -1,5 +1,4 @@
 import react from "@vitejs/plugin-react";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { configDefaults, defineConfig } from "vitest/config";
 
 // Docker-backed suites are opt-in through bun run test:integration.
@@ -16,7 +15,8 @@ const integrationTests = [
 ];
 
 export default defineConfig({
-  plugins: [react(), tsconfigPaths()],
+  plugins: [react()],
+  resolve: { tsconfigPaths: true },
   test: {
     setupFiles: ["./vitest.setup.ts"],
     clearMocks: true,

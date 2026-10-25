@@ -1,9 +1,9 @@
-import { z } from "zod/v4";
+import { z as schema } from "zod/v4";
 
-export const statsCheckIntervalSecondsSchema = z.number().int().min(5).max(86_400);
+export const statsCheckIntervalSecondsSchema = schema.number().int().min(5).max(86_400);
 
 // Zero keeps the integration's default cache lifetime.
-export const statsCacheTtlSecondsSchema = z
+export const statsCacheDurationSecondsSchema = schema
   .number()
   .int()
   .min(0)

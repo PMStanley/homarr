@@ -12,8 +12,8 @@ const logger = createLogger({ module: "integrationStats" });
 
 const FRESH_MS = 60 * 60 * 1000;
 // Jellyfin playback changes frequently; library and other statistics retain their longer cache.
-const getFreshMs = (kind: IntegrationKind, cacheTtlSeconds: number) =>
-  cacheTtlSeconds === 0 ? (kind === "jellyfin" ? 60_000 : FRESH_MS) : cacheTtlSeconds * 1000;
+const getFreshnessDurationMilliseconds = (kind: IntegrationKind, cacheDurationSeconds: number) =>
+  cacheDurationSeconds === 0 ? (kind === "jellyfin" ? 60_000 : FRESH_MS) : cacheDurationSeconds * 1000;
 const RETRY_MS = 60_000;
 const MAX_PENDING = 128;
 const snapshotSchema = z.object({
@@ -88,7 +88,7 @@ const resolveAsync = async (integration: Input) => {
   return { identity, generation: generation.value, name, channel, snapshot };
 };
 
-export const getStatsSnapshotAsync = async (integration: Input, cacheTtlSeconds = 0) => {
+export const getStatsSnapshotAsync = async (integration: Input, cacheDurationSeconds = 0) => {
   const demo = getDemoStatsValues(integration);
   if (demo) {
     return {
@@ -97,7 +97,7 @@ export const getStatsSnapshotAsync = async (integration: Input, cacheTtlSeconds 
       retryAt: 0,
       error: false,
       stale: false,
-      freshUntil: Date.now() + getFreshMs(integration.kind, cacheTtlSeconds),
+      freshUntil: Date.now() + getFreshnessDurationMilliseconds(integration.kind, cacheDurationSeconds),
     };
   }
 
@@ -108,30 +108,34 @@ export const getStatsSnapshotAsync = async (integration: Input, cacheTtlSeconds 
     retryAt: snapshot.retryAt,
     error: snapshot.error,
     stale:
-      snapshot.updatedAt === null || Date.now() - snapshot.updatedAt >= getFreshMs(integration.kind, cacheTtlSeconds),
-    freshUntil: snapshot.updatedAt === null ? null : snapshot.updatedAt + getFreshMs(integration.kind, cacheTtlSeconds),
+      snapshot.updatedAt === null ||
+      Date.now() - snapshot.updatedAt >= getFreshnessDurationMilliseconds(integration.kind, cacheDurationSeconds),
+    freshUntil:
+      snapshot.updatedAt === null
+        ? null
+        : snapshot.updatedAt + getFreshnessDurationMilliseconds(integration.kind, cacheDurationSeconds),
   };
 };
 
 const pauseAsync = () => new Promise<void>((resolve) => setTimeout(resolve, 250));
 
-export const refreshStatsAsync = async (integration: Input, force: boolean, cacheTtlSeconds = 0) => {
+export const refreshStatsAsync = async (integration: Input, force: boolean, cacheDurationSeconds = 0) => {
   const key = integration.id;
   const pending = running.get(key);
   if (pending) return await pending;
   if (running.size >= MAX_PENDING) throw new Error("Statistics refresh queue is full");
-  const work = runRefreshAsync(integration, force, cacheTtlSeconds).finally(() => running.delete(key));
+  const work = runRefreshAsync(integration, force, cacheDurationSeconds).finally(() => running.delete(key));
   running.set(key, work);
   return await work;
 };
 
-const runRefreshAsync = async (integration: Input, force: boolean, cacheTtlSeconds: number) => {
+const runRefreshAsync = async (integration: Input, force: boolean, cacheDurationSeconds: number) => {
   const initial = await resolveAsync(integration);
   if (!force && initial.snapshot.retryAt > Date.now()) return;
   if (
     !force &&
     initial.snapshot.updatedAt !== null &&
-    Date.now() - initial.snapshot.updatedAt < getFreshMs(integration.kind, cacheTtlSeconds)
+    Date.now() - initial.snapshot.updatedAt < getFreshnessDurationMilliseconds(integration.kind, cacheDurationSeconds)
   )
     return;
   const lock = createLockChannel(`integration-stats:lock:${integration.id}`, cacheOptions);
@@ -176,7 +180,7 @@ const runRefreshAsync = async (integration: Input, force: boolean, cacheTtlSecon
     if (
       !force &&
       current.snapshot.updatedAt !== null &&
-      Date.now() - current.snapshot.updatedAt < getFreshMs(integration.kind, cacheTtlSeconds)
+      Date.now() - current.snapshot.updatedAt < getFreshnessDurationMilliseconds(integration.kind, cacheDurationSeconds)
     )
       return;
     deadline = setTimeout(() => controller.abort(), 60_000);

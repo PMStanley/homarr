@@ -40,7 +40,7 @@ vi.mock("@mantine/core", () => {
   };
 });
 vi.mock("@homarr/api/client", () => {
-  const utils = {
+  const queryUtilities = {
     client: { widget: { stats: { refresh: { mutate: mocks.mutate } } } },
     widget: {
       stats: {
@@ -55,7 +55,7 @@ vi.mock("@homarr/api/client", () => {
   };
   return {
     clientApi: {
-      useUtils: () => utils,
+      useUtils: () => queryUtilities,
       useQueries: (callback: (api: unknown) => unknown) =>
         callback({
           widget: {
@@ -77,7 +77,7 @@ vi.mock("@homarr/api/client", () => {
     },
   };
 });
-const props = {
+const widgetProperties = {
   integrationIds: ["jellyfin"],
   isEditMode: false,
   width: 300,
@@ -113,19 +113,19 @@ afterEach(async () => {
 });
 
 test("automatically refreshes an existing stale snapshot once per integration", async () => {
-  await act(async () => root.render(<StatsWidget {...props} integrationIds={["jellyfin", "jellyfin"]} />));
+  await act(async () => root.render(<StatsWidget {...widgetProperties} integrationIds={["jellyfin", "jellyfin"]} />));
   expect(mocks.mutate).toHaveBeenCalledExactlyOnceWith({ integrationId: "jellyfin", force: false, cacheTtlSeconds: 0 });
   expect(mocks.setData).toHaveBeenCalledOnce();
 });
 test("does not refresh a fresh snapshot", async () => {
   mocks.snapshot.stale = false;
-  await act(async () => root.render(<StatsWidget {...props} />));
+  await act(async () => root.render(<StatsWidget {...widgetProperties} />));
   expect(mocks.mutate).not.toHaveBeenCalled();
 });
 
 test("uses configured checking time and cache policy for every snapshot operation", async () => {
-  const options = { ...props.options, checkIntervalSeconds: 10, cacheTtlSeconds: 300 };
-  await act(async () => root.render(<StatsWidget {...props} options={options} />));
+  const options = { ...widgetProperties.options, checkIntervalSeconds: 10, cacheTtlSeconds: 300 };
+  await act(async () => root.render(<StatsWidget {...widgetProperties} options={options} />));
   expect(mocks.pollInterval).toHaveBeenLastCalledWith(10_000);
   expect(mocks.queryInput).toHaveBeenCalledWith({ integrationId: "jellyfin", cacheTtlSeconds: 300 });
   expect(mocks.mutate).toHaveBeenCalledExactlyOnceWith({
@@ -138,32 +138,32 @@ test("uses configured checking time and cache policy for every snapshot operatio
 });
 test("honors the server retry backoff", async () => {
   mocks.snapshot.retryAt = Date.now() + 60_000;
-  await act(async () => root.render(<StatsWidget {...props} />));
+  await act(async () => root.render(<StatsWidget {...widgetProperties} />));
   expect(mocks.mutate).not.toHaveBeenCalled();
 });
 
 test("polls at snapshot expiry instead of waiting an extra minute", async () => {
-  const now = vi.spyOn(Date, "now").mockReturnValue(100_000);
+  const currentTimeSpy = vi.spyOn(Date, "now").mockReturnValue(100_000);
   try {
     mocks.snapshot.stale = false;
     mocks.snapshot.freshUntil = 123_000;
-    await act(async () => root.render(<StatsWidget {...props} />));
+    await act(async () => root.render(<StatsWidget {...widgetProperties} />));
     expect(mocks.pollInterval).toHaveBeenLastCalledWith(23_000);
   } finally {
-    now.mockRestore();
+    currentTimeSpy.mockRestore();
   }
 });
 
 test("response latency does not defer the next refresh past server expiry", async () => {
-  const now = vi.spyOn(Date, "now").mockReturnValue(100_000);
+  const currentTimeSpy = vi.spyOn(Date, "now").mockReturnValue(100_000);
   try {
     mocks.mutate.mockResolvedValue({ ...mocks.snapshot, updatedAt: 99_900, freshUntil: 159_900, stale: false });
-    await act(async () => root.render(<StatsWidget {...props} />));
-    now.mockReturnValue(159_900);
+    await act(async () => root.render(<StatsWidget {...widgetProperties} />));
+    currentTimeSpy.mockReturnValue(159_900);
     mocks.snapshot = { ...mocks.snapshot, stale: true };
-    await act(async () => root.render(<StatsWidget {...props} />));
+    await act(async () => root.render(<StatsWidget {...widgetProperties} />));
     expect(mocks.mutate).toHaveBeenCalledTimes(2);
   } finally {
-    now.mockRestore();
+    currentTimeSpy.mockRestore();
   }
 });

@@ -1,7 +1,7 @@
 import { IconChartBar } from "@tabler/icons-react";
 
 import { getWidgetIntegrationConfig } from "@homarr/definitions";
-import { statsCacheTtlSecondsSchema, statsCheckIntervalSecondsSchema } from "@homarr/validation/stats";
+import { statsCacheDurationSecondsSchema, statsCheckIntervalSecondsSchema } from "@homarr/validation/stats";
 
 import { createWidgetDefinition } from "../definition";
 import { optionsBuilder } from "../options";
@@ -18,7 +18,7 @@ export const { definition, componentLoader } = createWidgetDefinition("stats", {
         entries: factory.statsEntries(),
         cacheTtlSeconds: factory.number({
           defaultValue: 0,
-          validate: statsCacheTtlSecondsSchema,
+          validate: statsCacheDurationSecondsSchema,
           withDescription: true,
         }),
         checkIntervalSeconds: factory.number({

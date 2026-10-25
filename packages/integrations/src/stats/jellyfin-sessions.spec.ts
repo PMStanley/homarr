@@ -46,9 +46,9 @@ describe("Jellyfin playback statistics", () => {
     ["two playing streams", [session(true), { ...session(true), Id: "second" }], 2],
     ["paused stream", [session(true, true)], 0],
     ["mixed sessions", [session(false), session(true), session(true, true)], 1],
-  ])("counts %s", async (_name, sessions, count) => {
+  ])("counts %s", async (_scenarioName, sessions, expectedSessionCount) => {
     mocks.getSessions.mockResolvedValue({ data: sessions });
-    expect(await fetchStats()).toEqual({ sessions: count });
+    expect(await fetchStats()).toEqual({ sessions: expectedSessionCount });
   });
 
   test("stopping playback clears the count while the client remains connected", async () => {

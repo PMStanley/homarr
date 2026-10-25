@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 import { integrationKinds, integrationDefs } from "@homarr/definitions";
 import { getStatsMetrics } from "@homarr/integrations/stats";
 import { getStatsSnapshotAsync, refreshStatsAsync } from "@homarr/request-handler/stats";
-import { statsCacheTtlSecondsSchema } from "@homarr/validation/stats";
+import { statsCacheDurationSecondsSchema } from "@homarr/validation/stats";
 
 import { createOneIntegrationMiddleware } from "../../middlewares/integration";
 import { createTRPCRouter, publicProcedure } from "../../trpc";
@@ -20,10 +20,10 @@ export const statsRouter = createTRPCRouter({
       },
     })
     .concat(access)
-    .query(({ ctx }) => ({
-      name: ctx.integration.name,
-      iconUrl: integrationDefs[ctx.integration.kind].iconUrl,
-      metrics: getStatsMetrics(ctx.integration.kind),
+    .query(({ ctx: context }) => ({
+      name: context.integration.name,
+      iconUrl: integrationDefs[context.integration.kind].iconUrl,
+      metrics: getStatsMetrics(context.integration.kind),
     })),
   snapshot: publicProcedure
     .meta({
@@ -34,8 +34,8 @@ export const statsRouter = createTRPCRouter({
       },
     })
     .concat(access)
-    .input(z.object({ cacheTtlSeconds: statsCacheTtlSecondsSchema.default(0) }))
-    .query(async ({ ctx, input }) => await getStatsSnapshotAsync(ctx.integration, input.cacheTtlSeconds)),
+    .input(z.object({ cacheTtlSeconds: statsCacheDurationSecondsSchema.default(0) }))
+    .query(async ({ ctx: context, input }) => await getStatsSnapshotAsync(context.integration, input.cacheTtlSeconds)),
   refresh: publicProcedure
     .meta({
       mcp: {
@@ -46,9 +46,9 @@ export const statsRouter = createTRPCRouter({
       },
     })
     .concat(access)
-    .input(z.object({ force: z.boolean().default(false), cacheTtlSeconds: statsCacheTtlSecondsSchema.default(0) }))
-    .mutation(async ({ ctx, input }) => {
-      await refreshStatsAsync(ctx.integration, input.force, input.cacheTtlSeconds);
-      return await getStatsSnapshotAsync(ctx.integration, input.cacheTtlSeconds);
+    .input(z.object({ force: z.boolean().default(false), cacheTtlSeconds: statsCacheDurationSecondsSchema.default(0) }))
+    .mutation(async ({ ctx: context, input }) => {
+      await refreshStatsAsync(context.integration, input.force, input.cacheTtlSeconds);
+      return await getStatsSnapshotAsync(context.integration, input.cacheTtlSeconds);
     }),
 });

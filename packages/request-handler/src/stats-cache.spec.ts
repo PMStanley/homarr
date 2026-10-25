@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   snapshots: new Map<string, unknown>(),
   locks: new Set<string>(),
   fetch: vi.fn(),
+  warn: vi.fn(),
   generation: "generation",
 }));
 vi.mock("@homarr/integrations/stats", () => ({
@@ -29,6 +30,8 @@ vi.mock("@homarr/redis", () => ({
     setPersistentIfOwnedAsync: async (_token: string, key: string, value: unknown) => mocks.snapshots.set(key, value),
   }),
 }));
+vi.mock("@homarr/core/infrastructure/logs", () => ({ createLogger: () => ({ warn: mocks.warn }) }));
+
 const input = {
   id: "stats-cache-test",
   appId: null,
@@ -44,6 +47,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-10-25T12:00:00Z"));
   mocks.snapshots.clear();
   mocks.locks.clear();
+  mocks.warn.mockReset();
   mocks.fetch.mockReset().mockResolvedValue({ sessions: 1 });
 });
 afterEach(() => vi.useRealTimers());
@@ -123,6 +127,7 @@ describe("statistics cache refresh", () => {
     expect(await getStatsSnapshotAsync(input)).toMatchObject({ values: { sessions: 1 }, stale: true, error: true });
     await refreshStatsAsync(input, false);
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.warn).toHaveBeenCalledOnce();
     vi.advanceTimersByTime(60_000);
     mocks.fetch.mockResolvedValue({ sessions: 0 });
     await refreshStatsAsync(input, false);

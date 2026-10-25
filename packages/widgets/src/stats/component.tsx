@@ -45,10 +45,13 @@ export default function StatsWidget({
   const demoReadOnly = useDemoReadOnly();
   const advanced = displayMode === "advanced";
   const t = useI18n("widget.stats");
-  const utils = clientApi.useUtils();
-  const cacheTtlSeconds = options.cacheTtlSeconds ?? 0;
-  const checkIntervalMs = (options.checkIntervalSeconds ?? 60) * 1000;
-  const snapshotInput = useCallback((integrationId: string) => ({ integrationId, cacheTtlSeconds }), [cacheTtlSeconds]);
+  const queryUtilities = clientApi.useUtils();
+  const cacheDurationSeconds = options.cacheTtlSeconds ?? 0;
+  const checkIntervalMilliseconds = (options.checkIntervalSeconds ?? 60) * 1000;
+  const snapshotInput = useCallback(
+    (integrationId: string) => ({ integrationId, cacheTtlSeconds: cacheDurationSeconds }),
+    [cacheDurationSeconds],
+  );
   const [refreshing, setRefreshing] = useState(0);
   const refreshErrors = useRef(new Map<string, number | null>());
   const [localTable, setLocalTable] = useState<boolean>();
@@ -83,14 +86,14 @@ export default function StatsWidget({
   const snapshots = clientApi.useQueries((api) =>
     visibleIds.map((integrationId) =>
       api.widget.stats.snapshot(snapshotInput(integrationId), {
-        staleTime: Math.min(30_000, checkIntervalMs),
+        staleTime: Math.min(30_000, checkIntervalMilliseconds),
         refetchInterval: demoReadOnly
           ? false
           : (query) => {
               const snapshot = query.state.data;
-              if (!snapshot || snapshot.stale || snapshot.freshUntil === null) return checkIntervalMs;
+              if (!snapshot || snapshot.stale || snapshot.freshUntil === null) return checkIntervalMilliseconds;
               // Align the next poll with expiry, including snapshots filled just after a poll.
-              return Math.max(1_000, Math.min(checkIntervalMs, snapshot.freshUntil - Date.now()));
+              return Math.max(1_000, Math.min(checkIntervalMilliseconds, snapshot.freshUntil - Date.now()));
             },
         refetchOnWindowFocus: !demoReadOnly,
         refetchIntervalInBackground: false,
@@ -102,7 +105,7 @@ export default function StatsWidget({
   const hasRefreshError = (integrationId: string) => {
     const failedSnapshotAt = refreshErrors.current.get(integrationId);
     if (failedSnapshotAt === undefined) return false;
-    const updatedAt = utils.widget.stats.snapshot.getData(snapshotInput(integrationId))?.updatedAt;
+    const updatedAt = queryUtilities.widget.stats.snapshot.getData(snapshotInput(integrationId))?.updatedAt;
     if (updatedAt == null) return true;
     // A different widget or browser may have recovered this shared source after our transport failure.
     if (failedSnapshotAt === null) return false;
@@ -113,28 +116,32 @@ export default function StatsWidget({
     async (integrationId: string, force: boolean) => {
       if (pending.current.has(integrationId)) return;
       if (!force && (retry.current.get(integrationId) ?? 0) > Date.now()) return;
-      const previousUpdatedAt = utils.widget.stats.snapshot.getData(snapshotInput(integrationId))?.updatedAt ?? null;
+      const previousUpdatedAt =
+        queryUtilities.widget.stats.snapshot.getData(snapshotInput(integrationId))?.updatedAt ?? null;
       pending.current.add(integrationId);
       refreshErrors.current.delete(integrationId);
       setRefreshing((value) => value + 1);
       try {
-        const result = await utils.client.widget.stats.refresh.mutate({ ...snapshotInput(integrationId), force });
-        await utils.widget.stats.snapshot.cancel(snapshotInput(integrationId));
-        utils.widget.stats.snapshot.setData(snapshotInput(integrationId), result);
+        const result = await queryUtilities.client.widget.stats.refresh.mutate({
+          ...snapshotInput(integrationId),
+          force,
+        });
+        await queryUtilities.widget.stats.snapshot.cancel(snapshotInput(integrationId));
+        queryUtilities.widget.stats.snapshot.setData(snapshotInput(integrationId), result);
         // A fresh snapshot already has a server expiry. Starting a second window
         // here would skip that expiry by the response's transport time.
-        if (result.stale) retry.current.set(integrationId, Date.now() + Math.min(checkIntervalMs, 60_000));
+        if (result.stale) retry.current.set(integrationId, Date.now() + Math.min(checkIntervalMilliseconds, 60_000));
         else retry.current.delete(integrationId);
       } catch {
         refreshErrors.current.set(integrationId, previousUpdatedAt);
         retry.current.set(integrationId, Date.now() + 60_000);
-        await utils.widget.stats.snapshot.invalidate(snapshotInput(integrationId));
+        await queryUtilities.widget.stats.snapshot.invalidate(snapshotInput(integrationId));
       } finally {
         pending.current.delete(integrationId);
         setRefreshing((value) => value - 1);
       }
     },
-    [utils, snapshotInput, checkIntervalMs],
+    [queryUtilities, snapshotInput, checkIntervalMilliseconds],
   );
 
   const refreshSources = async () => {
@@ -145,7 +152,7 @@ export default function StatsWidget({
     getDataStatus: () => {
       // Read the cache at invocation time: the menu can finish refreshing before React commits our next render.
       const currentSnapshots = visibleIds.map((integrationId) =>
-        utils.widget.stats.snapshot.getData(snapshotInput(integrationId)),
+        queryUtilities.widget.stats.snapshot.getData(snapshotInput(integrationId)),
       );
       const timestamps = currentSnapshots.flatMap((snapshot) => {
         if (snapshot?.updatedAt == null) return [];
